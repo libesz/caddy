@@ -18,12 +18,56 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 const filename = "Caddyfile"
+
+// ToJSON2 converts caddyfile to its JSON representation.
+func ToJSON2(filename string) ([]byte, error) {
+	caddyfile, _ := ioutil.ReadFile(filename)
+	var j EncodedCaddyfile
+
+	serverBlocks, err := Parse(filename, bytes.NewReader(caddyfile), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sb := range serverBlocks {
+		block := EncodedServerBlock{
+			Keys: sb.Keys,
+			Body: [][]interface{}{},
+		}
+
+		// Extract directives deterministically by sorting them
+		var directives = make([]string, len(sb.Tokens))
+		for dir := range sb.Tokens {
+			directives = append(directives, dir)
+		}
+		sort.Strings(directives)
+
+		// Convert each directive's tokens into our JSON structure
+		for _, dir := range directives {
+			disp := NewDispenserTokens(filename, sb.Tokens[dir])
+			for disp.Next() {
+				block.Body = append(block.Body, constructLine(&disp))
+			}
+		}
+
+		// tack this block onto the end of the list
+		j = append(j, block)
+	}
+
+	result, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
 
 // ToJSON converts caddyfile to its JSON representation.
 func ToJSON(caddyfile []byte) ([]byte, error) {
